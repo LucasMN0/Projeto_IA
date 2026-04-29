@@ -1,0 +1,1009 @@
+---
+title: "Machine Learning Project R Markdown - Active Transportation Prevelence Prediction"
+author: "Tate HubkaRao"
+date: "2023-08-17"
+note: This Rmd is intended to import CHASE data, and go through the steps of creating machine learning models to predict child AT prevelence.A seperate model will be made to predict collisions, as that one will use very different data.
+output: html_document
+---
+
+
+### Table of Contents: 
+1) Import library for all relevant packages
+2) Import the datasets from ArcGIS
+3) Clean data and set the seed (cleaning done in STATA)
+4) Split data into city-specific and national datasets
+5) National Analysis
+  5a) Split data into training and testing sets
+  5b) Build the model
+  5c) Predict outcomes
+  5d) Evaluate model
+  5e) Prune tree
+  5f) Evaluate prunes
+6) City Specific Analysis
+  6a) Split data into training and testing sets
+  6b) Build the model
+  6c) Predict outcomes
+  6d) Evaluate model
+  6e) Prune tree
+  6f) Evaluate prunes
+7) Compare National and City-specific trees
+
+```{r echo = F}
+knitr::opts_chunk$set(include=FALSE, # Include = Whether to display the output of the code
+                      echo=FALSE, # Echo = Whether to display code 
+                      eval = TRUE, # Eval = Whether to evaluate the code
+                      tidy = TRUE, # Tidy = Whether to reformat code in a tidy way when displaying it
+                      fig.pos="H",
+                      message = FALSE,
+                      warning=FALSE,
+                      fig.path = "graphs/",
+                      crop=NULL
+                      )
+```
+
+
+```{r eval = T}
+# Tidying code
+rm(list = ls())
+dir.create("graphs", showWarnings = FALSE)
+dir.create("output", showWarnings = FALSE)
+```
+
+## Step 1: Import libraries
+R Version:
+```{r include = TRUE}
+version$version.string
+```
+
+```{r }
+library(conflicted)
+library(plyr)
+library(rpart)
+library(rpart.plot)
+# tidyverse carregado por componentes (meta-pacote indisponível no ambiente Linux)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(readr)
+library(purrr)
+library(forcats)
+library(stringr)
+library(lubridate)
+library(caret)
+library(haven)
+library(tree)
+library(vip)
+library(randomForest)
+library(table1)
+library(basictabler)
+library(data.table)
+library(reshape2)
+```
+
+Included packages:
+```{r include = TRUE}
+(.packages())
+```
+
+
+## Step 2: Descriptive statistics
+Here, we import the cleaned dataframe from STATA, called 'school and catchment data.dta'. This includes all the counts from all the schools, that fit the inclusion criteria. 
+```{r}
+# Collision by DA dataset
+prevelence_dta <- readRDS("DadosProjetoIA/School_and_Catchment_Data.rds")
+
+```
+
+These figures show the outcome 'Average Annual collisions' for each dissemination area in the included cities (Toronto, Peel, Calgary, Montreal).
+
+```{r include = T}
+hist(prevelence_dta$active_t_prop,
+     #breaks = 10,
+     xlim = range(0,1),
+     ylim = range(0,130),
+     main = "% of AT per school",
+     xlab = "AT % (walking and bicycling)"
+     )
+```
+
+As we can see, this outcome variable is fairly normally distributed.
+
+This chunk creates a table showing the descriptive statistics of each city. 
+```{r include = T}
+prevelence_dta$city = factor(prevelence_dta$city,
+                             labels = c("Calgary", "Laval", "Montreal", "Peel", "Toronto", "Surrey", "Vancouver")
+                            )
+
+label(prevelence_dta$area) = "Area (km^2)"
+label(prevelence_dta$pop2016_0to17yrs) = "# of children 0-17 years old"
+label(prevelence_dta$child_den) = "Density of children 0-17 years old"
+label(prevelence_dta$collisions_child) = "Child AT Collisions"
+label(prevelence_dta$active_t_prop) = "Proportion of active transportation"
+label(prevelence_dta$immigrant_pro) = "Proportion of recent (<5yrs) immigrants"
+label(prevelence_dta$school_num) = "Number of schools"
+label(prevelence_dta$road_sum) = "Length of roadway"
+label(prevelence_dta$pedcount) = "# of pedestrians"
+label(prevelence_dta$pedcount_prop) = "Proportion of pedestrians"
+label(prevelence_dta$bikecount) = "# of bicyclists"
+label(prevelence_dta$bikecount_prop) = "Proportion of bicyclists"
+
+
+table1(~ area + pop2016_0to17yrs + child_den + collisions_child + active_t_prop + immigrant_pro + school_num + road_sum + pedcount + pedcount_prop + bikecount + bikecount_prop | city,
+       data = prevelence_dta,
+       render.continuous = "mean (sd)",
+       #render.categorical,
+       caption = "Table 1. Characteristics of Catchment Zone, by city/region",
+       footnote = "Note: Data are the mean (sd) averaged accross all Catchment Zones in each city/region."
+       )
+```
+
+```{r include = T}
+prevelence_dta$city = factor(prevelence_dta$city,
+                             labels = c("Calgary", "Laval", "Montreal", "Peel", "Toronto", "Surrey", "Vancouver")
+                            )
+
+label(prevelence_dta$area) = "Area (km^2)"
+label(prevelence_dta$walkscore) = "Walkscore"
+label(prevelence_dta$pop2016_0to17yrs) = "Number of (0-17 yrs) children "
+label(prevelence_dta$pop_den) = "Population density"
+label(prevelence_dta$child_den) = "Density of children"
+label(prevelence_dta$enrollment) = "School enrollment"
+label(prevelence_dta$active_t_prop) = "Proportion of children using AT"
+label(prevelence_dta$collisions_child) = "Child AT-MVCs"
+label(prevelence_dta$immigrant_den) = "Density of immigrant population"
+label(prevelence_dta$multihome_den) = "Density of multihome buildings"
+label(prevelence_dta$school_num) = "Number of schools"
+label(prevelence_dta$road_den) = "Density of roadway"
+
+
+
+table1(~ area + walkscore + pop2016_0to17yrs + pop_den + child_den + enrollment + active_t_prop + collisions_child + immigrant_den + multihome_den + school_num + road_den | city,
+       data = prevelence_dta,
+       render.continuous = "median (iqr)",
+       #render.categorical,
+       caption = "Table 1. Characteristics of Catchment Zone, by city/region",
+       footnote = "Note: Data are the median (iqr) accross all Catchment Zones in each city/region."
+       )
+```
+
+
+## Step 3: Set the seed
+To ensure reproducibility of these models, we will set the seed prior to any datawork. We will set the seed at 15. 
+```{r}
+# Set the seed prior to doing any further work
+seed = 15
+```
+
+## Step 4: Split data into National and City-Specific datasets
+This code removes all variations of the outcome variable. 
+```{r}
+#names(collision_dta)
+prevelence_df <- subset(prevelence_dta,
+  select = -c(myid, caroccup, caroccup_prop, pedcount, pedcount_prop, bikecount, bikecount_prop, other, other_prop, bussed, bussed_prop, active_t, total_count, years, province, area, collisions_child, collisions_adult, pop2016, child_pro, pop2016_0to17yrs, lico_at_da, immigrant_pro, immigrant_recent, house_pre60, multihome_num, com_area, park_area, res_area, ind_area, gov_area, enrollment_pro, guard_den, highway_km, highway_pro, majorroad_pro, majorroad_km, minorroad_km, minorroad_pro, road_sum, intersection_num, signals_num, speedhump_roads_sum, circles_num, narrows_num, extensions_num, diverters_num, diverters_den, crosswalks_num, flashing_num, speedsigns_num, speedsigns_den, raised_crosswalk_num, raised_crosswalk_den, bikeclass_1, bikeclass_2, bikeclass_3, bikeclass_total, bikeclass_pro,
+               ActiveT, ActiveTprop, NewActiveT, NewActiveTProp, TotalCount,
+               caroccupant, caroccupantprop, pedcountprop, bikecountprop,
+               Other, Otherprop, Newbussedprop, Bussedprop
+              ))
+```
+
+Included variables (predictors and outcomes):
+```{r}
+names(prevelence_df)
+```
+
+## Step 5: National Analysis
+We will first conduct our analysis on all of the data, looking at it from a Canada-wide perspective. 
+
+## Step 5a: Split data into training and testing data
+We will be splitting the dataset into two components, the training dataset and the testing dataset. Each dataset will have a portion of the full dataset (80% and 20% respectively).
+```{r}
+set.seed(seed)
+split_ind = createDataPartition(y=prevelence_df$city,
+                                p=0.80,
+                                list = FALSE
+                                )
+
+train = subset(prevelence_df[split_ind, ])
+test = subset(prevelence_df[-split_ind, ])
+
+train_nocity = subset(train, select = -c(city))
+test_nocity = subset(test, select = -c(city))
+```
+
+
+## Step 5b: Build the model
+As the outcome variable is a count (number of collisions), we will be using a Poisson Regression Tree for our model. Due to each city supplying a different number of years worth of data, we will consider the number of years of data provided as the time component, creating an outcome of number of collisions per year. 
+```{r}
+# This chunk specifies the control pieces of the model. As there are multiple models being built using the same characteristics, this saves space
+set.seed(seed)
+minsplit = 20
+cp = 0.001
+
+control = rpart.control(
+  xval = 10,  
+  minsplit = 20,
+  minbucket = round(minsplit/3),
+  cp = cp,
+  maxcompete = 4, 
+  maxsurrogate = 5, 
+  usesurrogate = 2, 
+  surrogatestyle = 0, 
+  maxdepth = 30
+  )
+```
+
+```{r}
+set.seed(seed)
+model = rpart(
+  formula = active_t_prop ~. ,   
+  data = train,   
+  method = 'anova' , 
+  control = control
+  )
+model_nocity = rpart(
+  formula = active_t_prop ~. ,   
+  data = train_nocity,   
+  method = 'anova' , 
+  control = control
+  )
+```
+
+```{r include = T}
+rpart.plot(model, main = "Regression Tree of AT Prevelence",
+           yesno = 2,
+           box.palette = "-RdYlGn",)
+rpart.plot(model_nocity, main = "Regression Tree of AT Prevelence (No city variable)",
+           yesno = 2,
+           box.palette = "-RdYlGn",)
+```
+
+
+```{r}
+#printcp(model) # display the results
+#printcp(model_nocity)
+```
+
+
+
+
+
+
+## Step 7: Predict the outcomes and measure performance
+
+First, we will determine how accurate the model was on the training data. 
+```{r}
+set.seed(seed)
+predict_train = predict(model, newdata = train)
+predict_test = predict(model, newdata = test)
+
+predict_train_nocity = predict(model_nocity, newdata = train_nocity)
+predict_test_nocity = predict(model_nocity, newdata = test_nocity)
+```
+
+
+Here are some outputs providing some information on the accuracy of the predicted model on the test data. 
+```{r include = T}
+set.seed(seed)
+res_train = (predict_train - train$active_t_prop)^2
+res_train_nocity = (predict_train_nocity - train_nocity$active_t_prop)^2
+
+res_test = (predict_test - test$active_t_prop)^2
+res_test_nocity = (predict_test_nocity - test_nocity$active_t_prop)^2
+
+train_rmse = RMSE(predict_train, train$active_t_prop)
+test_rmse = RMSE(predict_test, test$active_t_prop)
+train_rmse_nocity = RMSE(predict_train_nocity, train_nocity$active_t_prop)
+test_rmse_nocity = RMSE(predict_test_nocity, test_nocity$active_t_prop)
+
+national_table = BasicTable$new()
+national_table$cells$setCell(1, 1, cellType="root", rawValue="National Model")
+national_table$cells$setCell(1, 2, cellType="columnHeader", rawValue="Train RSME")
+national_table$cells$setCell(1, 3, cellType="columnHeader", rawValue="Test RSME")
+
+national_table$cells$setCell(2, 1, cellType="cell", rawValue="With City Variable")
+national_table$cells$setCell(2, 2, cellType="cell", rawValue=train_rmse)
+national_table$cells$setCell(2, 3, cellType="cell", rawValue=test_rmse)
+
+national_table$cells$setCell(3, 1, cellType="cell", rawValue="Without City Variable")
+national_table$cells$setCell(3, 2, cellType="cell", rawValue=train_rmse_nocity)
+national_table$cells$setCell(3, 3, cellType="cell", rawValue=test_rmse_nocity)
+
+national_table$renderTable()
+```
+
+We can also get a figure showing the relative error in the R-Squared value based on differing levels of the complexity parameter (cp). By changing the cp in our model, we can influence how many splits occur in our tree. With larger cp values, we can limit the number of splits by ensuring the model only splits if the overall R-squared increases by the cp. This is based on the training data. 
+```{r}
+# Can we get the test and train line in one graph?
+plotcp(model)
+plotcp(model_nocity)
+```
+
+
+## Step 8: Measure performance 
+
+
+Measure the importance of each variable
+```{r eval = T, include = T}
+set.seed(seed)
+var_importance = vip::vip(model)
+var_importance_nocity = vip::vip(model_nocity)
+print(var_importance)
+print(var_importance_nocity)
+vip::vi(model)
+vip::vi(model_nocity)
+```
+
+
+## Step 9: Prune tree and evaluate
+
+## Prune the tree
+
+Now that we have a full tree, and evaluated it's performance, we can see whether pruning it a bit helps. 
+```{r}
+# This code determines what the minimum cp value is ...
+set.seed(seed)
+mincp = model$cptable[which.min(model$cptable[,"xerror"]),"CP"]
+mincp_nocity = model$cptable[which.min(model_nocity$cptable[,"xerror"]),"CP"]
+
+# This is the code to create a pruned tree, using the minimum cp value
+pmodel = prune(model, cp=mincp) # from cptable   
+pmodel_nocity = prune(model_nocity, cp=mincp_nocity) # from cptable   
+print(mincp)
+print(mincp_nocity)
+```
+
+
+So here is our final tree:
+```{r include = T}
+rpart.plot(pmodel, main = "Poisson Regression Tree of At Prevelence, Pruned",
+           yesno = 2,
+           box.palette = "RdYlGn",)
+rpart.plot(pmodel_nocity, main = "Poisson Regression Tree of At Prevelence, Pruned (No city variable)",
+           yesno = 2,
+           box.palette = "RdYlGn",)
+```
+
+
+
+```{r}
+set.seed(seed)
+predict_ptrain = predict(pmodel, newdata = train)
+predict_ptest = predict(pmodel, newdata = test)
+predict_ptrain_nocity = predict(pmodel_nocity, newdata = train_nocity)
+predict_ptest_nocity = predict(pmodel_nocity, newdata = test_nocity)
+```
+
+Measure the importance of each variable
+```{r eval = T, include = T}
+set.seed(seed)
+var_importancep = vip::vip(pmodel)
+var_importancep_nocity = vip::vip(pmodel_nocity)
+print(var_importancep)
+print(var_importancep_nocity)
+vip::vi(pmodel)
+vip::vi(pmodel_nocity)
+```
+
+```{r include = T}
+set.seed(seed)
+pres_train = (predict_ptrain - train$active_t_prop)^2
+pres_train_nocity = (predict_ptrain_nocity - train_nocity$active_t_prop)^2
+
+pres_test = (predict_ptest - test$active_t_prop)^2
+pres_test_nocity = (predict_ptest_nocity - test_nocity$active_t_prop)^2
+
+train_prmse = RMSE(predict_ptrain, train$active_t_prop)
+test_prmse = RMSE(predict_ptest, test$active_t_prop)
+train_prmse_nocity = RMSE(predict_ptrain_nocity, train_nocity$active_t_prop)
+test_prmse_nocity = RMSE(predict_ptest_nocity, test_nocity$active_t_prop)
+
+national_tablep = BasicTable$new()
+national_tablep$cells$setCell(1, 1, cellType="root", rawValue="National Model")
+national_tablep$cells$setCell(1, 2, cellType="columnHeader", rawValue="Train RSME")
+national_tablep$cells$setCell(1, 3, cellType="columnHeader", rawValue="Test RSME")
+national_tablep$cells$setCell(1, 4, cellType="columnHeader", rawValue="Train RSME - Pruned")
+national_tablep$cells$setCell(1, 5, cellType="columnHeader", rawValue="Test RSME - Pruned")
+
+national_tablep$cells$setCell(2, 1, cellType="cell", rawValue="With City Variable")
+national_tablep$cells$setCell(2, 2, cellType="cell", rawValue=train_rmse)
+national_tablep$cells$setCell(2, 3, cellType="cell", rawValue=test_rmse)
+national_tablep$cells$setCell(2, 4, cellType="cell", rawValue=train_prmse)
+national_tablep$cells$setCell(2, 5, cellType="cell", rawValue=test_prmse)
+
+national_tablep$cells$setCell(3, 1, cellType="cell", rawValue="Without City Variable")
+national_tablep$cells$setCell(3, 2, cellType="cell", rawValue=train_rmse_nocity)
+national_tablep$cells$setCell(3, 3, cellType="cell", rawValue=test_rmse_nocity)
+national_tablep$cells$setCell(3, 4, cellType="cell", rawValue=train_prmse_nocity)
+national_tablep$cells$setCell(3, 5, cellType="cell", rawValue=test_prmse_nocity)
+
+national_tablep$renderTable()
+```
+
+
+### City-specific models
+
+We will redo all of the above, but for each city seperatly. This will allow us to compare them, and see whether a prediction model for all cities would be better or worse, than a city-specific one. 
+
+## Step 6a) Split data into training and testing sets
+
+```{r}
+# This will create a training and testing dataset for each city
+set.seed(seed)
+train_cal = subset(prevelence_df[split_ind, ], city == "Calgary", select = -c(city)) 
+train_pee = subset(prevelence_df[split_ind, ], city == "Peel", select = -c(city))
+train_tor = subset(prevelence_df[split_ind, ], city == "Toronto", select = -c(city))
+train_mon = subset(prevelence_df[split_ind, ], city == "Montreal", select = -c(city))
+train_lav = subset(prevelence_df[split_ind, ], city == "Laval", select = -c(city))
+train_sur = subset(prevelence_df[split_ind, ], city == "Surrey", select = -c(city))
+train_van = subset(prevelence_df[split_ind, ], city == "Vancouver", select = -c(city))
+
+test_cal = subset(prevelence_df[-split_ind, ], city == "Calgary", select = -c(city))
+test_pee = subset(prevelence_df[-split_ind, ], city == "Peel", select = -c(city))
+test_tor = subset(prevelence_df[-split_ind, ], city == "Toronto", select = -c(city))
+test_mon = subset(prevelence_df[-split_ind, ], city == "Montreal", select = -c(city))
+test_lav = subset(prevelence_df[-split_ind, ], city == "Laval", select = -c(city))
+test_sur = subset(prevelence_df[-split_ind, ], city == "Surrey", select = -c(city))
+test_van = subset(prevelence_df[-split_ind, ], city == "Vancouver", select = -c(city))
+
+```
+
+## Step 6b) Build the model
+
+```{r}
+# Now for a model for each city
+set.seed(seed)
+model_cal = rpart(
+  formula = active_t_prop ~.,
+  data = train_cal,   
+  method = 'anova', 
+  control = control
+  )
+model_pee = rpart(
+  formula = active_t_prop ~.,   
+  data = train_pee,   
+  method = 'anova' , 
+  control = control
+  )
+model_tor = rpart(
+  formula = active_t_prop ~.,   
+  data = train_tor,   
+  method = 'anova' , 
+  control = control
+  )
+model_mon = rpart(
+  formula = active_t_prop ~.,   
+  data = train_mon,   
+  method = 'anova' , 
+  control = control
+  )
+model_lav = rpart(
+  formula = active_t_prop ~.,   
+  data = train_lav,   
+  method = 'anova' , 
+  control = control
+  )
+model_sur = rpart(
+  formula = active_t_prop ~.,   
+  data = train_sur,   
+  method = 'anova' , 
+  control = control
+  )
+model_van = rpart(
+  formula = active_t_prop ~.,   
+  data = train_van,   
+  method = 'anova' , 
+  control = control
+  )
+```
+
+```{r include = T}
+rpart.plot(model_cal, main = "Regression Tree of AT Prevelence in Calgary", yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_pee, main = "Regression Tree of AT Prevelence in Peel Region",yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_tor, main = "Regression Tree of AT Prevelence in Toronto", yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_mon, main = "Regression Tree of AT Prevelence in Montreal", yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_lav, main = "Regression Tree of AT Prevelence in Laval", yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_sur, main = "Regression Tree of AT Prevelence in Surrey", yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_van, main = "Regression Tree of AT Prevelence in Vancouver", yesno = 2,box.palette = "RdYlGn",)
+```
+
+## Step  6c) Predict outcomes
+
+```{r}
+set.seed(seed)
+predict_train_cal = predict(model_cal, newdata = train_cal)
+predict_train_pee = predict(model_pee, newdata = train_pee)
+predict_train_tor = predict(model_tor, newdata = train_tor)
+predict_train_mon = predict(model_mon, newdata = train_mon)
+predict_train_lav = predict(model_lav, newdata = train_lav)
+predict_train_sur = predict(model_sur, newdata = train_sur)
+predict_train_van = predict(model_van, newdata = train_van)
+
+predict_test_cal = predict(model_cal, newdata = test_cal)
+predict_test_pee = predict(model_pee, newdata = test_pee)
+predict_test_tor = predict(model_tor, newdata = test_tor)
+predict_test_mon = predict(model_mon, newdata = test_mon)
+predict_test_lav = predict(model_lav, newdata = test_lav)
+predict_test_sur = predict(model_sur, newdata = test_sur)
+predict_test_van = predict(model_van, newdata = test_van)
+```
+
+## Step 6d) Evaluate model
+
+```{r include = T}
+set.seed(seed)
+train_cal_rmse = RMSE(predict_train_cal, train_cal$active_t_prop)
+train_pee_rmse = RMSE(predict_train_pee, train_pee$active_t_prop)
+train_tor_rmse = RMSE(predict_train_tor, train_tor$active_t_prop)
+train_mon_rmse = RMSE(predict_train_mon, train_mon$active_t_prop)
+train_lav_rmse = RMSE(predict_train_lav, train_lav$active_t_prop)
+train_sur_rmse = RMSE(predict_train_sur, train_sur$active_t_prop)
+train_van_rmse = RMSE(predict_train_van, train_van$active_t_prop)
+
+test_cal_rmse = RMSE(predict_test_cal, test_cal$active_t_prop)
+test_pee_rmse = RMSE(predict_test_pee, test_pee$active_t_prop)
+test_tor_rmse = RMSE(predict_test_tor, test_tor$active_t_prop)
+test_mon_rmse = RMSE(predict_test_mon, test_mon$active_t_prop)
+test_lav_rmse = RMSE(predict_test_lav, test_lav$active_t_prop)
+test_sur_rmse = RMSE(predict_test_sur, test_sur$active_t_prop)
+test_van_rmse = RMSE(predict_test_van, test_van$active_t_prop)
+                  
+city_table = BasicTable$new()
+city_table$cells$setCell(1, 1, cellType="root", rawValue="City-specific Model")
+city_table$cells$setCell(1, 2, cellType="columnHeader", rawValue="Train RSME")
+city_table$cells$setCell(1, 3, cellType="columnHeader", rawValue="Test RSME")
+
+city_table$cells$setCell(2, 1, cellType="cell", rawValue="Calgary")
+city_table$cells$setCell(2, 2, cellType="cell", rawValue=train_cal_rmse)
+city_table$cells$setCell(2, 3, cellType="cell", rawValue=test_cal_rmse)
+
+city_table$cells$setCell(3, 1, cellType="cell", rawValue="Peel Region")
+city_table$cells$setCell(3, 2, cellType="cell", rawValue=train_pee_rmse)
+city_table$cells$setCell(3, 3, cellType="cell", rawValue=test_pee_rmse)
+
+city_table$cells$setCell(4, 1, cellType="cell", rawValue="Toronto")
+city_table$cells$setCell(4, 2, cellType="cell", rawValue=train_tor_rmse)
+city_table$cells$setCell(4, 3, cellType="cell", rawValue=test_tor_rmse)
+
+city_table$cells$setCell(5, 1, cellType="cell", rawValue="Montreal")
+city_table$cells$setCell(5, 2, cellType="cell", rawValue=train_mon_rmse)
+city_table$cells$setCell(5, 3, cellType="cell", rawValue=test_mon_rmse)
+
+city_table$cells$setCell(6, 1, cellType="cell", rawValue="Laval")
+city_table$cells$setCell(6, 2, cellType="cell", rawValue=train_lav_rmse)
+city_table$cells$setCell(6, 3, cellType="cell", rawValue=test_lav_rmse)
+
+city_table$cells$setCell(7, 1, cellType="cell", rawValue="Surrey")
+city_table$cells$setCell(7, 2, cellType="cell", rawValue=train_sur_rmse)
+city_table$cells$setCell(7, 3, cellType="cell", rawValue=test_sur_rmse)
+
+city_table$cells$setCell(8, 1, cellType="cell", rawValue="Vancouver")
+city_table$cells$setCell(8, 2, cellType="cell", rawValue=train_van_rmse)
+city_table$cells$setCell(8, 3, cellType="cell", rawValue=test_van_rmse)
+city_table$renderTable()
+
+```
+
+Measure the importance of each variable
+```{r eval = T, include = T}
+set.seed(seed)
+var_importance_cal = vip::vip(model_cal)
+var_importance_pee = vip::vip(model_pee)
+var_importance_tor = vip::vip(model_tor)
+var_importance_mon = vip::vip(model_mon)
+var_importance_lav = vip::vip(model_lav)
+var_importance_sur = vip::vip(model_sur)
+var_importance_van = vip::vip(model_van)
+print(var_importance_cal)
+print(var_importance_pee)
+print(var_importance_tor)
+print(var_importance_mon)
+print(var_importance_lav)
+print(var_importance_sur)
+print(var_importance_van)
+vip::vi(model_cal)
+vip::vi(model_pee)
+vip::vi(model_tor)
+vip::vi(model_mon)
+vip::vi(model_lav)
+vip::vi(model_sur)
+vip::vi(model_van)
+```
+## Step 6e) Prune tree
+
+```{r}
+# This code determines what the minimum cp value is ...
+set.seed(seed)
+mincp_cal <- model_cal$cptable[which.min(model_cal$cptable[,"xerror"]),"CP"]
+mincp_pee <- model_pee$cptable[which.min(model_pee$cptable[,"xerror"]),"CP"]
+mincp_tor <- model_tor$cptable[which.min(model_tor$cptable[,"xerror"]),"CP"]
+mincp_mon <- model_mon$cptable[which.min(model_mon$cptable[,"xerror"]),"CP"]
+mincp_lav <- model_lav$cptable[which.min(model_lav$cptable[,"xerror"]),"CP"]
+mincp_sur <- model_sur$cptable[which.min(model_sur$cptable[,"xerror"]),"CP"]
+mincp_van <- model_van$cptable[which.min(model_van$cptable[,"xerror"]),"CP"]
+
+# This is the code to create a pruned tree, using the minimum cp value
+pmodel_cal<- prune(model_cal, cp=mincp_cal)  
+pmodel_pee<- prune(model_pee, cp=mincp_pee)  
+pmodel_tor<- prune(model_tor, cp=mincp_tor)  
+pmodel_mon<- prune(model_mon, cp=mincp_mon)  
+pmodel_lav<- prune(model_lav, cp=mincp_lav)  
+pmodel_sur<- prune(model_sur, cp=mincp_sur)  
+pmodel_van<- prune(model_van, cp=mincp_van)  
+
+print(paste("Calgary mincp:", mincp_cal))
+print(paste("Peel mincp:", mincp_pee))
+print(paste("Toronto mincp:", mincp_tor))
+print(paste("Montreal mincp:", mincp_mon))
+print(paste("Laval mincp:", mincp_lav))
+print(paste("Surrey mincp:", mincp_sur))
+print(paste("Vancouver mincp:", mincp_van))
+
+```
+
+```{r include = T}
+safe_plot <- function(pm, fm, title, yesno=1) {
+  if (nrow(pm$frame) > 1) {
+    rpart.plot(pm, main=title, box.palette="RdYlGn", yesno=yesno)
+  } else {
+    rpart.plot(fm, main=paste(title, "(árvore completa — poda resultou em nó raiz)"),
+               box.palette="RdYlGn", yesno=yesno)
+  }
+}
+safe_plot(pmodel_cal, model_cal, "Regression Tree of AT Prevelence in Calgary")
+safe_plot(pmodel_pee, model_pee, "Regression Tree of AT Prevelence in Peel Region")
+safe_plot(pmodel_tor, model_tor, "Regression Tree of AT Prevelence in Toronto", yesno=2)
+safe_plot(pmodel_mon, model_mon, "Regression Tree of AT Prevelence in Montreal", yesno=2)
+safe_plot(pmodel_lav, model_lav, "Regression Tree of AT Prevelence in Laval")
+safe_plot(pmodel_sur, model_sur, "Regression Tree of AT Prevelence in Surrey")
+safe_plot(pmodel_van, model_van, "Regression Tree of AT Prevelence in Vancouver", yesno=2)
+```
+
+```{r}
+set.seed(seed)
+predict_ptrain_cal = predict(model_cal,
+  newdata = train_cal,
+  )
+predict_ptrain_pee = predict(model_pee,
+  newdata = train_pee,
+  )
+predict_ptrain_tor = predict(model_tor,
+  newdata = train_tor,
+  )
+predict_ptrain_mon = predict(model_mon,
+  newdata = train_mon,
+  )
+predict_ptrain_lav = predict(model_lav,
+  newdata = train_lav,
+  )
+predict_ptrain_sur = predict(model_sur,
+  newdata = train_sur,
+  )
+predict_ptrain_van = predict(model_van,
+  newdata = train_van,
+  )
+
+predict_ptest_cal = predict(model_cal,
+  newdata = test_cal,
+  )
+predict_ptest_pee = predict(model_pee,
+  newdata = test_pee,
+  )
+predict_ptest_tor = predict(model_tor,
+  newdata = test_tor,
+  )
+predict_ptest_mon = predict(model_mon,
+  newdata = test_mon,
+  )
+predict_ptest_lav = predict(model_lav,
+  newdata = test_lav,
+  )
+predict_ptest_sur = predict(model_sur,
+  newdata = test_sur,
+  )
+predict_ptest_van = predict(model_van,
+  newdata = test_van,
+  )
+```
+
+## Step 6f) Evaluate prunes
+```{r include = T}
+set.seed(seed)
+train_cal_prmse = RMSE(predict_ptrain_cal, train_cal$active_t_prop)
+train_pee_prmse = RMSE(predict_ptrain_pee, train_pee$active_t_prop)
+train_tor_prmse = RMSE(predict_ptrain_tor, train_tor$active_t_prop)
+train_mon_prmse = RMSE(predict_ptrain_mon, train_mon$active_t_prop)
+train_lav_prmse = RMSE(predict_ptrain_lav, train_lav$active_t_prop)
+train_sur_prmse = RMSE(predict_ptrain_sur, train_sur$active_t_prop)
+train_van_prmse = RMSE(predict_ptrain_van, train_van$active_t_prop)
+
+test_cal_prmse = RMSE(predict_ptest_cal, test_cal$active_t_prop)
+test_pee_prmse = RMSE(predict_ptest_pee, test_pee$active_t_prop)
+test_tor_prmse = RMSE(predict_ptest_tor, test_tor$active_t_prop)
+test_mon_prmse = RMSE(predict_ptest_mon, test_mon$active_t_prop)
+test_lav_prmse = RMSE(predict_ptest_lav, test_lav$active_t_prop)
+test_sur_prmse = RMSE(predict_ptest_sur, test_sur$active_t_prop)
+test_van_prmse = RMSE(predict_ptest_van, test_van$active_t_prop)
+
+city_tablep = BasicTable$new()
+city_tablep$cells$setCell(1, 1, cellType="root", rawValue="City-specific Model")
+city_tablep$cells$setCell(1, 2, cellType="columnHeader", rawValue="Train RSME")
+city_tablep$cells$setCell(1, 3, cellType="columnHeader", rawValue="Test RSME")
+city_tablep$cells$setCell(1, 4, cellType="columnHeader", rawValue="Train RSME - Pruned")
+city_tablep$cells$setCell(1, 5, cellType="columnHeader", rawValue="Test RSME - Pruned")
+
+city_tablep$cells$setCell(2, 1, cellType="cell", rawValue="Calgary")
+city_tablep$cells$setCell(2, 2, cellType="cell", rawValue=train_cal_rmse)
+city_tablep$cells$setCell(2, 3, cellType="cell", rawValue=test_cal_rmse)
+city_tablep$cells$setCell(2, 4, cellType="cell", rawValue=train_cal_prmse)
+city_tablep$cells$setCell(2, 5, cellType="cell", rawValue=test_cal_prmse)
+
+city_tablep$cells$setCell(3, 1, cellType="cell", rawValue="Peel Region")
+city_tablep$cells$setCell(3, 2, cellType="cell", rawValue=train_pee_rmse)
+city_tablep$cells$setCell(3, 3, cellType="cell", rawValue=test_pee_rmse)
+city_tablep$cells$setCell(3, 4, cellType="cell", rawValue=train_pee_prmse)
+city_tablep$cells$setCell(3, 5, cellType="cell", rawValue=test_pee_prmse)
+
+city_tablep$cells$setCell(4, 1, cellType="cell", rawValue="Toronto")
+city_tablep$cells$setCell(4, 2, cellType="cell", rawValue=train_tor_rmse)
+city_tablep$cells$setCell(4, 3, cellType="cell", rawValue=test_tor_rmse)
+city_tablep$cells$setCell(4, 4, cellType="cell", rawValue=train_tor_prmse)
+city_tablep$cells$setCell(4, 5, cellType="cell", rawValue=test_tor_prmse)
+
+city_tablep$cells$setCell(5, 1, cellType="cell", rawValue="Montreal")
+city_tablep$cells$setCell(5, 2, cellType="cell", rawValue=train_mon_rmse)
+city_tablep$cells$setCell(5, 3, cellType="cell", rawValue=test_mon_rmse)
+city_tablep$cells$setCell(5, 4, cellType="cell", rawValue=train_mon_prmse)
+city_tablep$cells$setCell(5, 5, cellType="cell", rawValue=test_mon_prmse)
+
+city_tablep$cells$setCell(6, 1, cellType="cell", rawValue="Laval")
+city_tablep$cells$setCell(6, 2, cellType="cell", rawValue=train_lav_rmse)
+city_tablep$cells$setCell(6, 3, cellType="cell", rawValue=test_lav_rmse)
+city_tablep$cells$setCell(6, 4, cellType="cell", rawValue=train_lav_prmse)
+city_tablep$cells$setCell(6, 5, cellType="cell", rawValue=test_lav_prmse)
+
+city_tablep$cells$setCell(7, 1, cellType="cell", rawValue="Surrey")
+city_tablep$cells$setCell(7, 2, cellType="cell", rawValue=train_sur_rmse)
+city_tablep$cells$setCell(7, 3, cellType="cell", rawValue=test_sur_rmse)
+city_tablep$cells$setCell(7, 4, cellType="cell", rawValue=train_sur_prmse)
+city_tablep$cells$setCell(7, 5, cellType="cell", rawValue=test_sur_prmse)
+
+city_tablep$cells$setCell(8, 1, cellType="cell", rawValue="Vancouver")
+city_tablep$cells$setCell(8, 2, cellType="cell", rawValue=train_van_rmse)
+city_tablep$cells$setCell(8, 3, cellType="cell", rawValue=test_van_rmse)
+city_tablep$cells$setCell(8, 4, cellType="cell", rawValue=train_van_prmse)
+city_tablep$cells$setCell(8, 5, cellType="cell", rawValue=test_van_prmse)
+
+city_tablep$renderTable()
+
+```
+
+Measure the importance of each pruned variable
+```{r eval = T, include = T}
+set.seed(seed)
+var_importance_pcal = vip::vip(pmodel_cal)
+var_importance_ppee = vip::vip(pmodel_pee)
+var_importance_ptor = vip::vip(pmodel_tor)
+var_importance_pmon = vip::vip(pmodel_mon)
+var_importance_plav = vip::vip(pmodel_lav)
+var_importance_psur = vip::vip(pmodel_sur)
+var_importance_pvan = vip::vip(pmodel_van)
+print(var_importance_pcal)
+print(var_importance_ppee)
+print(var_importance_ptor)
+print(var_importance_pmon)
+print(var_importance_plav)
+print(var_importance_psur)
+print(var_importance_pvan)
+vip::vi(pmodel_cal)
+vip::vi(pmodel_pee)
+vip::vi(pmodel_tor)
+vip::vi(pmodel_mon)
+vip::vi(pmodel_lav)
+vip::vi(pmodel_sur)
+vip::vi(pmodel_van)
+
+safe_vi <- function(pm, fm) {
+  v <- as.data.frame(vip::vi(pm))
+  if (ncol(v) < 2) as.data.frame(vip::vi(fm)) else v
+}
+
+df_pmodel = as.data.frame(vip::vi(pmodel))
+df_pmodel_nocity = as.data.frame(vip::vi(pmodel_nocity))
+df_pmodel_cal = safe_vi(pmodel_cal, model_cal)
+df_pmodel_tor = safe_vi(pmodel_tor, model_tor)
+df_pmodel_pee = safe_vi(pmodel_pee, model_pee)
+df_pmodel_lav = safe_vi(pmodel_lav, model_lav)
+df_pmodel_mon = safe_vi(pmodel_mon, model_mon)
+df_pmodel_sur = safe_vi(pmodel_sur, model_sur)
+df_pmodel_van = safe_vi(pmodel_van, model_van)
+
+df_model_cal = as.data.frame(vip::vi(model_cal))
+df_model_tor = as.data.frame(vip::vi(model_tor))
+df_model_pee = as.data.frame(vip::vi(model_pee))
+df_model_lav = as.data.frame(vip::vi(model_lav))
+df_model_mon = as.data.frame(vip::vi(model_mon))
+df_model_sur = as.data.frame(vip::vi(model_sur))
+df_model_van = as.data.frame(vip::vi(model_van))
+
+colnames(df_pmodel) = c("Variable", "National")
+colnames(df_pmodel_nocity) = c("Variable", "National, No City")
+colnames(df_pmodel_tor) = c("Variable", "Toronto")
+colnames(df_pmodel_mon) = c("Variable", "Montreal")
+colnames(df_pmodel_van) = c("Variable", "Vancouver")
+
+colnames(df_model_cal) = c("Variable", "Calgary")
+colnames(df_model_pee) = c("Variable", "Peel Region")
+colnames(df_model_lav) = c("Variable", "Laval")
+colnames(df_model_sur) = c("Variable", "Surrey")
+```
+```{r}
+# Explore trying to automate averaging the importance scores
+
+```
+
+
+## Step 7 Evaluate prunes
+```{r include = T}
+set.seed(seed)
+compare_table = BasicTable$new()
+compare_table$cells$setCell(1, 1, cellType="root", rawValue="Model")
+compare_table$cells$setCell(1, 2, cellType="columnHeader", rawValue="Train RSME")
+compare_table$cells$setCell(1, 3, cellType="columnHeader", rawValue="Test RSME")
+compare_table$cells$setCell(1, 4, cellType="columnHeader", rawValue="Train RSME - Pruned")
+compare_table$cells$setCell(1, 5, cellType="columnHeader", rawValue="Test RSME - Pruned")
+
+compare_table$cells$setCell(2, 1, cellType="cell", rawValue="National With City Variable")
+compare_table$cells$setCell(2, 2, cellType="cell", rawValue=train_rmse)
+compare_table$cells$setCell(2, 3, cellType="cell", rawValue=test_rmse)
+compare_table$cells$setCell(2, 4, cellType="cell", rawValue=train_prmse)
+compare_table$cells$setCell(2, 5, cellType="cell", rawValue=test_prmse)
+
+compare_table$cells$setCell(3, 1, cellType="cell", rawValue="National Without City Variable")
+compare_table$cells$setCell(3, 2, cellType="cell", rawValue=train_rmse_nocity)
+compare_table$cells$setCell(3, 3, cellType="cell", rawValue=test_rmse_nocity)
+compare_table$cells$setCell(3, 4, cellType="cell", rawValue=train_prmse_nocity)
+compare_table$cells$setCell(3, 5, cellType="cell", rawValue=test_prmse_nocity)
+
+compare_table$cells$setCell(4, 1, cellType="cell", rawValue="Calgary")
+compare_table$cells$setCell(4, 2, cellType="cell", rawValue=train_cal_rmse)
+compare_table$cells$setCell(4, 3, cellType="cell", rawValue=test_cal_rmse)
+compare_table$cells$setCell(4, 4, cellType="cell", rawValue=train_cal_prmse)
+compare_table$cells$setCell(4, 5, cellType="cell", rawValue=test_cal_prmse)
+
+compare_table$cells$setCell(5, 1, cellType="cell", rawValue="Peel Region")
+compare_table$cells$setCell(5, 2, cellType="cell", rawValue=train_pee_rmse)
+compare_table$cells$setCell(5, 3, cellType="cell", rawValue=test_pee_rmse)
+compare_table$cells$setCell(5, 4, cellType="cell", rawValue=train_pee_prmse)
+compare_table$cells$setCell(5, 5, cellType="cell", rawValue=test_pee_prmse)
+
+compare_table$cells$setCell(6, 1, cellType="cell", rawValue="Toronto")
+compare_table$cells$setCell(6, 2, cellType="cell", rawValue=train_tor_rmse)
+compare_table$cells$setCell(6, 3, cellType="cell", rawValue=test_tor_rmse)
+compare_table$cells$setCell(6, 4, cellType="cell", rawValue=train_tor_prmse)
+compare_table$cells$setCell(6, 5, cellType="cell", rawValue=test_tor_prmse)
+
+compare_table$cells$setCell(7, 1, cellType="cell", rawValue="Montreal")
+compare_table$cells$setCell(7, 2, cellType="cell", rawValue=train_mon_rmse)
+compare_table$cells$setCell(7, 3, cellType="cell", rawValue=test_mon_rmse)
+compare_table$cells$setCell(7, 4, cellType="cell", rawValue=train_mon_prmse)
+compare_table$cells$setCell(7, 5, cellType="cell", rawValue=test_mon_prmse)
+
+compare_table$cells$setCell(8, 1, cellType="cell", rawValue="Laval")
+compare_table$cells$setCell(8, 2, cellType="cell", rawValue=train_lav_rmse)
+compare_table$cells$setCell(8, 3, cellType="cell", rawValue=test_lav_rmse)
+compare_table$cells$setCell(8, 4, cellType="cell", rawValue=train_lav_prmse)
+compare_table$cells$setCell(8, 5, cellType="cell", rawValue=test_lav_prmse)
+
+compare_table$cells$setCell(9, 1, cellType="cell", rawValue="Surrey")
+compare_table$cells$setCell(9, 2, cellType="cell", rawValue=train_sur_rmse)
+compare_table$cells$setCell(9, 3, cellType="cell", rawValue=test_sur_rmse)
+compare_table$cells$setCell(9, 4, cellType="cell", rawValue=train_sur_prmse)
+compare_table$cells$setCell(9, 5, cellType="cell", rawValue=test_sur_prmse)
+
+compare_table$cells$setCell(10, 1, cellType="cell", rawValue="Vancouver")
+compare_table$cells$setCell(10, 2, cellType="cell", rawValue=train_van_rmse)
+compare_table$cells$setCell(10, 3, cellType="cell", rawValue=test_van_rmse)
+compare_table$cells$setCell(10, 4, cellType="cell", rawValue=train_van_prmse)
+compare_table$cells$setCell(10, 5, cellType="cell", rawValue=test_van_prmse)
+
+compare_table$renderTable()
+```
+
+```{r}
+vip::vi(pmodel)
+vip::vi(pmodel_nocity)
+vip::vi(model_cal)
+vip::vi(model_pee)
+vip::vi(model_tor)
+vip::vi(model_mon)
+vip::vi(model_lav)
+vip::vi(model_sur)
+vip::vi(model_van)
+```
+
+```{r}
+df_pimportance = join_all(list(df_pmodel,df_pmodel_nocity, df_model_cal, df_pmodel_tor, df_model_pee,df_model_lav,df_pmodel_mon,df_model_sur,df_pmodel_van), 
+         by='Variable', type='full'
+         )
+#view(df_pimportance)
+```
+
+
+```{r}
+#df_pimportance$group = select(df_pimportance,"Variable")
+df_pimportanceplot = df_pimportance
+rownames(df_pimportanceplot) = (df_pimportanceplot[,1])
+df_pimportanceplot = df_pimportanceplot[,-1]
+df_pimportanceplot$Predictor = row.names(df_pimportanceplot)
+dat.m = melt(df_pimportanceplot)
+impplot = ggplot(dat.m, aes(value, y=reorder(Predictor,value,na.rm=TRUE))) + labs(y="Predictors", x="Importance Score", color = "Model") + geom_point(aes(colour = variable))
+ggsave(impplot, filename = "output/AT_Importance_Score_Dot_Plot.png")
+impplot
+```
+
+```{r}
+# Dot plots of importance scores
+impdata = dat.m
+#impdata$predictor = factor(impdata$predictor)
+
+impdata$color[impdata$variable=="National"] = "red"
+impdata$color[impdata$variable=="National, No City"] = "blue"
+impdata$color[impdata$variable=="Calgary"] = "grey"
+impdata$color[impdata$variable=="Peel"] = "green"
+impdata$color[impdata$variable=="Toronto"] = "yellow"
+impdata$color[impdata$variable=="Laval"] = "orange"
+impdata$color[impdata$variable=="Montreal"] = "purple"
+impdata$color[impdata$variable=="Surrey"] = "white"
+impdata$color[impdata$variable=="Vancouver"] = "black"
+
+
+dotchart(impdata$value, 
+         #cex=.7,
+         groups=impdata$predictor,
+         labels=row.names(impdata$predictor),
+         xlab = "Importance",
+         color=impdata$color
+         )
+```
+```{r}
+impdata
+```
+
+
+```{r}
+combined_testdf = cbind(predict_ptest, test)
+combined_traindf = cbind(predict_ptrain, train)
+
+combined_testdf = dplyr::rename(combined_testdf, c("predicted"="predict_ptest"))
+combined_traindf = dplyr::rename(combined_traindf, c("predicted"="predict_ptrain"))
+
+prevalence_merge_df = rbind(combined_testdf, combined_traindf)
+
+prevalence_final_df = cbind(prevalence_merge_df, prevelence_dta[,c("myid","active_t")])
+
+write.csv(prevalence_final_df, "output/Predicted_Prevalence.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
