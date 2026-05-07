@@ -182,7 +182,9 @@ prevelence_df <- subset(prevelence_dta,
   select = -c(myid, caroccup, caroccup_prop, pedcount, pedcount_prop, bikecount, bikecount_prop, other, other_prop, bussed, bussed_prop, active_t, total_count, years, province, area, collisions_child, collisions_adult, pop2016, child_pro, pop2016_0to17yrs, lico_at_da, immigrant_pro, immigrant_recent, house_pre60, multihome_num, com_area, park_area, res_area, ind_area, gov_area, enrollment_pro, guard_den, highway_km, highway_pro, majorroad_pro, majorroad_km, minorroad_km, minorroad_pro, road_sum, intersection_num, signals_num, speedhump_roads_sum, circles_num, narrows_num, extensions_num, diverters_num, diverters_den, crosswalks_num, flashing_num, speedsigns_num, speedsigns_den, raised_crosswalk_num, raised_crosswalk_den, bikeclass_1, bikeclass_2, bikeclass_3, bikeclass_total, bikeclass_pro,
                ActiveT, ActiveTprop, NewActiveT, NewActiveTProp, TotalCount,
                caroccupant, caroccupantprop, pedcountprop, bikecountprop,
-               Other, Otherprop, Newbussedprop, Bussedprop
+               Other, Otherprop, Newbussedprop, Bussedprop,
+               # aliases duplicados removidos — mesmos dados com nomes diferentes
+               walkscore, enrollment, school_num, open_area, City.catch, CHASEYEAR.catch
               ))
 ```
 
@@ -780,13 +782,20 @@ city_tablep$renderTable()
 Measure the importance of each pruned variable
 ```{r eval = T, include = T}
 set.seed(seed)
-var_importance_pcal = vip::vip(pmodel_cal)
-var_importance_ppee = vip::vip(pmodel_pee)
-var_importance_ptor = vip::vip(pmodel_tor)
-var_importance_pmon = vip::vip(pmodel_mon)
-var_importance_plav = vip::vip(pmodel_lav)
-var_importance_psur = vip::vip(pmodel_sur)
-var_importance_pvan = vip::vip(pmodel_van)
+# Fallback: se o modelo podado ficou com nó raiz único, usa o modelo completo
+safe_vip <- function(pm, fm, title = "") {
+  m <- if (!is.null(pm$variable.importance) && nrow(pm$frame) > 1) pm else fm
+  p <- vip::vip(m)
+  if (nchar(title) > 0) p <- p + ggplot2::ggtitle(title)
+  p
+}
+var_importance_pcal = safe_vip(pmodel_cal, model_cal, "Calgary (pruned)")
+var_importance_ppee = safe_vip(pmodel_pee, model_pee, "Peel Region (pruned)")
+var_importance_ptor = safe_vip(pmodel_tor, model_tor, "Toronto (pruned)")
+var_importance_pmon = safe_vip(pmodel_mon, model_mon, "Montreal (pruned)")
+var_importance_plav = safe_vip(pmodel_lav, model_lav, "Laval (pruned)")
+var_importance_psur = safe_vip(pmodel_sur, model_sur, "Surrey (pruned)")
+var_importance_pvan = safe_vip(pmodel_van, model_van, "Vancouver (pruned)")
 print(var_importance_pcal)
 print(var_importance_ppee)
 print(var_importance_ptor)
@@ -794,13 +803,6 @@ print(var_importance_pmon)
 print(var_importance_plav)
 print(var_importance_psur)
 print(var_importance_pvan)
-vip::vi(pmodel_cal)
-vip::vi(pmodel_pee)
-vip::vi(pmodel_tor)
-vip::vi(pmodel_mon)
-vip::vi(pmodel_lav)
-vip::vi(pmodel_sur)
-vip::vi(pmodel_van)
 
 safe_vi <- function(pm, fm) {
   v <- as.data.frame(vip::vi(pm))
