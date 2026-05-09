@@ -23,6 +23,11 @@ cat("Linhas removidas (Schoolid vazio):", n_before - nrow(schools), "\n\n")
 merged <- merge(schools, catchment, by = "Schoolid", all.x = TRUE, suffixes = c("", ".catch"))
 cat("Após merge:", nrow(merged), "linhas,", ncol(merged), "colunas\n\n")
 
+# Corrige duplicata de capitalização gerada pelo merge (Walkscore vs walkscore)
+if ("Walkscore" %in% names(merged) && "walkscore" %in% names(merged)) {
+  merged$Walkscore <- NULL
+}
+
 # Colunas renomeadas (alias) — valores originais intactos
 merged$myid            <- merged$Schoolid
 merged$Schoolid        <- NULL  # Remove original para não entrar como preditor fator no rpart

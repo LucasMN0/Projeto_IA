@@ -6,7 +6,7 @@
 
 | Campo | Informação |
 |---|---|
-| **Título** | *Factors associated with active transportation to school among Canadian children: a national cross-sectional study using recursive partitioning* |
+| **Título** | *Using machine learning to predict child active transportation prevalence* |
 | **Autores** | Tate HubkaRao, Meghan Winters et al. |
 | **Periódico** | Journal of Transport & Health (Elsevier) |
 | **Ano** | 2025 |
@@ -50,7 +50,7 @@ Os dois arquivos foram unidos por `LEFT JOIN` na chave `Schoolid`, gerando um da
 
 ### Preditores utilizados
 
-Após limpeza de variáveis redundantes, colineares e identificadores, foram mantidos **~132 preditores**, organizados em:
+Após limpeza de variáveis redundantes, colineares e identificadores, foram mantidos **127 preditores**, organizados em:
 
 - **Densidades populacionais:** `pop_den`, `child_den`, `multihome_den`, `immigrant_den`
 - **Infraestrutura viária e ciclística:** `road_den`, `density_major_roads`, `density_bicycle_class`, `density_intersections`, `density_curb_extensions`
@@ -384,7 +384,7 @@ O Random Forest reduziu o **RMSE de teste em 12,6%** em relação à árvore pod
 
 O gap de 0,086 (treino→teste) permanece maior que o da árvore podada (0,018) porque:
 - As 500 árvores individuais **não foram podadas** — cada uma overfita seu bootstrap
-- Com 132 preditores e apenas 442 escolas no treino, o modelo tem alta dimensionalidade
+- Com 127 preditores e apenas 442 escolas no treino, o modelo tem alta dimensionalidade
 - A imputação de NAs por mediana pode ter introduído ruído adicional
 
 Uma extensão natural seria aplicar **Gradient Boosting** (XGBoost) ou **poda interna nas árvores do RF** para reduzir ainda mais o overfitting.

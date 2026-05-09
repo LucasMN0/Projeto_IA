@@ -9,7 +9,7 @@
 
 ### O que é e por que foi escolhido
 
-O artigo se chama **"Factors associated with active transportation to school among Canadian children: a national cross-sectional study using recursive partitioning"**, publicado em 2025 no **Journal of Transport & Health** (Elsevier), periódico indexado no **Web of Science** com fator de impacto reconhecido. O DOI é `10.1016/j.jth.2025.102178`.
+O artigo se chama **"Using machine learning to predict child active transportation prevalence"**, publicado em 2025 no **Journal of Transport & Health** (Elsevier), periódico indexado no **Web of Science** com fator de impacto reconhecido. O DOI é `10.1016/j.jth.2025.102178`.
 
 O autor principal do código é **Tate HubkaRao**, pesquisador da área de saúde pública e mobilidade urbana. O artigo investiga **quais características do ambiente urbano influenciam a proporção de crianças que vão à escola caminhando ou de bicicleta** em sete cidades canadenses.
 
@@ -66,7 +66,7 @@ A distribuição é aproximadamente normal em torno de 0,54, o que justifica o u
 
 ### Variáveis preditoras — as mais importantes para entender
 
-Após remover variáveis redundantes, identificadores e outras formas do desfecho, foram mantidos **~132 preditores**. As mais relevantes:
+Após remover variáveis redundantes, identificadores e outras formas do desfecho, foram mantidos **127 preditores**. As mais relevantes:
 
 | Variável | O que mede | Por que importa |
 |---|---|---|
@@ -127,7 +127,7 @@ A ideia central: **dividir as escolas em grupos cada vez mais homogêneos**, ond
 
 **1. Nó raiz** — todas as 442 escolas de treino. A média de `active_t_prop` é 0,546.
 
-**2. Busca do melhor split** — o algoritmo testa, para cada uma das 132 variáveis, todos os valores possíveis de corte. Para cada par (variável, corte), divide as 442 escolas em dois grupos e calcula:
+**2. Busca do melhor split** — o algoritmo testa, para cada uma das 127 variáveis, todos os valores possíveis de corte. Para cada par (variável, corte), divide as 442 escolas em dois grupos e calcula:
 $$\Delta RSS = RSS_{antes} - (RSS_{esquerda} + RSS_{direita})$$
 O RSS é a soma dos quadrados das diferenças entre cada escola e a média do grupo. O split que **maximizar** o ΔRSS é o escolhido.
 
@@ -298,7 +298,7 @@ O **Random Forest** (Breiman, 2001) combina 500 árvores de regressão por dois 
 - Escolas diferentes ficam em diferentes bootstraps → cada árvore aprende uma perspectiva levemente diferente
 
 **Amostragem de variáveis por split:**
-- Em cada divisão, só `m = p/3` preditores são considerados (em vez de todos os 132)
+- Em cada divisão, só `m = p/3` preditores são considerados (em vez de todos os 127)
 - Isso força as árvores a serem **diversas entre si**
 
 **Previsão final:**
@@ -377,7 +377,7 @@ Use os tópicos abaixo como roteiro. Desenvolva cada um com suas próprias palav
 
 ## Referências
 
-1. HubkaRao, T. et al. (2025). *Factors associated with active transportation to school among Canadian children*. Journal of Transport & Health. DOI: 10.1016/j.jth.2025.102178
+1. HubkaRao, T. et al. (2025). *Using machine learning to predict child active transportation prevalence*. Journal of Transport & Health. DOI: 10.1016/j.jth.2025.102178
 
 2. CHASE Study Data (2018). Borealis Repository. DOI: 10.5683/SP3/W9YL4Q
 

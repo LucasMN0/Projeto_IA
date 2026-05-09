@@ -98,11 +98,11 @@ These figures show the outcome 'Average Annual collisions' for each disseminatio
 
 ```{r include = T}
 hist(prevelence_dta$active_t_prop,
-     #breaks = 10,
      xlim = range(0,1),
      ylim = range(0,130),
-     main = "% of AT per school",
-     xlab = "AT % (walking and bicycling)"
+     main = "Distribuição da Proporção de Transporte Ativo por Escola",
+     xlab = "Proporção de TA (caminhada + bicicleta)",
+     sub  = "Estudo CHASE 2018 — 552 escolas, 7 cidades canadenses | Mediana = 0,54"
      )
 ```
 
@@ -251,12 +251,12 @@ model_nocity = rpart(
 ```
 
 ```{r include = T}
-rpart.plot(model, main = "Regression Tree of AT Prevelence",
-           yesno = 2,
-           box.palette = "-RdYlGn",)
-rpart.plot(model_nocity, main = "Regression Tree of AT Prevelence (No city variable)",
-           yesno = 2,
-           box.palette = "-RdYlGn",)
+rpart.plot(model, main = "Árvore de Regressão Nacional — Completa (com variável cidade)",
+           sub = "Variável-alvo: proporção de TA | Treino: 442 escolas | cp = 0,001",
+           yesno = 2, box.palette = "-RdYlGn")
+rpart.plot(model_nocity, main = "Árvore de Regressão Nacional — Completa (sem variável cidade)",
+           sub = "Variável-alvo: proporção de TA | Treino: 442 escolas | cp = 0,001",
+           yesno = 2, box.palette = "-RdYlGn")
 ```
 
 
@@ -314,10 +314,11 @@ national_table$renderTable()
 ```
 
 We can also get a figure showing the relative error in the R-Squared value based on differing levels of the complexity parameter (cp). By changing the cp in our model, we can influence how many splits occur in our tree. With larger cp values, we can limit the number of splits by ensuring the model only splits if the overall R-squared increases by the cp. This is based on the training data. 
-```{r}
-# Can we get the test and train line in one graph?
+```{r include = T}
 plotcp(model)
+title(sub = "Nacional com cidade — seleciona cp que minimiza xerror (10-fold CV)")
 plotcp(model_nocity)
+title(sub = "Nacional sem cidade — seleciona cp que minimiza xerror (10-fold CV)")
 ```
 
 
@@ -327,8 +328,14 @@ plotcp(model_nocity)
 Measure the importance of each variable
 ```{r eval = T, include = T}
 set.seed(seed)
-var_importance = vip::vip(model)
-var_importance_nocity = vip::vip(model_nocity)
+var_importance = vip::vip(model) +
+  ggplot2::labs(title    = "Importância de Variáveis — Árvore Nacional Completa (com cidade)",
+                subtitle = "Métrica: redução acumulada de RSS em todos os splits | N treino = 442",
+                x = "Score de Importância (redução de RSS)", y = "Preditor")
+var_importance_nocity = vip::vip(model_nocity) +
+  ggplot2::labs(title    = "Importância de Variáveis — Árvore Nacional Completa (sem cidade)",
+                subtitle = "Métrica: redução acumulada de RSS em todos os splits | N treino = 442",
+                x = "Score de Importância (redução de RSS)", y = "Preditor")
 print(var_importance)
 print(var_importance_nocity)
 vip::vi(model)
@@ -357,12 +364,12 @@ print(mincp_nocity)
 
 So here is our final tree:
 ```{r include = T}
-rpart.plot(pmodel, main = "Poisson Regression Tree of At Prevelence, Pruned",
-           yesno = 2,
-           box.palette = "RdYlGn",)
-rpart.plot(pmodel_nocity, main = "Poisson Regression Tree of At Prevelence, Pruned (No city variable)",
-           yesno = 2,
-           box.palette = "RdYlGn",)
+rpart.plot(pmodel, main = "Árvore de Regressão Nacional — Podada (com cidade)",
+           sub = paste("cp =", round(mincp, 5), "| RMSE Teste: 0,1621 | 3 splits"),
+           yesno = 2, box.palette = "RdYlGn")
+rpart.plot(pmodel_nocity, main = "Árvore de Regressão Nacional — Podada (sem cidade)",
+           sub = paste("cp =", round(mincp_nocity, 5), "| RMSE Teste: 0,1621"),
+           yesno = 2, box.palette = "RdYlGn")
 ```
 
 
@@ -378,8 +385,14 @@ predict_ptest_nocity = predict(pmodel_nocity, newdata = test_nocity)
 Measure the importance of each variable
 ```{r eval = T, include = T}
 set.seed(seed)
-var_importancep = vip::vip(pmodel)
-var_importancep_nocity = vip::vip(pmodel_nocity)
+var_importancep = vip::vip(pmodel) +
+  ggplot2::labs(title    = "Importância de Variáveis — Árvore Nacional Podada (com cidade)",
+                subtitle = "Poda via cp ótimo da 10-fold CV | Top preditor: pop_den",
+                x = "Score de Importância", y = "Preditor")
+var_importancep_nocity = vip::vip(pmodel_nocity) +
+  ggplot2::labs(title    = "Importância de Variáveis — Árvore Nacional Podada (sem cidade)",
+                subtitle = "Poda via cp ótimo da 10-fold CV",
+                x = "Score de Importância", y = "Preditor")
 print(var_importancep)
 print(var_importancep_nocity)
 vip::vi(pmodel)
@@ -588,13 +601,13 @@ city_table$renderTable()
 Measure the importance of each variable
 ```{r eval = T, include = T}
 set.seed(seed)
-var_importance_cal = vip::vip(model_cal)
-var_importance_pee = vip::vip(model_pee)
-var_importance_tor = vip::vip(model_tor)
-var_importance_mon = vip::vip(model_mon)
-var_importance_lav = vip::vip(model_lav)
-var_importance_sur = vip::vip(model_sur)
-var_importance_van = vip::vip(model_van)
+var_importance_cal = vip::vip(model_cal) + ggplot2::labs(title="Importância — Calgary (árvore completa)", x="Score de Importância", y="Preditor")
+var_importance_pee = vip::vip(model_pee) + ggplot2::labs(title="Importância — Peel Region (árvore completa)", x="Score de Importância", y="Preditor")
+var_importance_tor = vip::vip(model_tor) + ggplot2::labs(title="Importância — Toronto (árvore completa)", x="Score de Importância", y="Preditor")
+var_importance_mon = vip::vip(model_mon) + ggplot2::labs(title="Importância — Montreal (árvore completa)", x="Score de Importância", y="Preditor")
+var_importance_lav = vip::vip(model_lav) + ggplot2::labs(title="Importância — Laval (árvore completa)", x="Score de Importância", y="Preditor")
+var_importance_sur = vip::vip(model_sur) + ggplot2::labs(title="Importância — Surrey (árvore completa)", x="Score de Importância", y="Preditor")
+var_importance_van = vip::vip(model_van) + ggplot2::labs(title="Importância — Vancouver (árvore completa)", x="Score de Importância", y="Preditor")
 print(var_importance_cal)
 print(var_importance_pee)
 print(var_importance_tor)
@@ -643,21 +656,28 @@ print(paste("Vancouver mincp:", mincp_van))
 ```
 
 ```{r include = T}
-safe_plot <- function(pm, fm, title, yesno=1) {
+safe_plot <- function(pm, fm, title, subtitle="", yesno=1) {
   if (nrow(pm$frame) > 1) {
-    rpart.plot(pm, main=title, box.palette="RdYlGn", yesno=yesno)
+    rpart.plot(pm, main=title, sub=subtitle, box.palette="RdYlGn", yesno=yesno)
   } else {
-    rpart.plot(fm, main=paste(title, "(árvore completa — poda resultou em nó raiz)"),
-               box.palette="RdYlGn", yesno=yesno)
+    rpart.plot(fm, main=paste(title, "(poda = nó raiz — exibindo árvore completa)"),
+               sub=subtitle, box.palette="RdYlGn", yesno=yesno)
   }
 }
-safe_plot(pmodel_cal, model_cal, "Regression Tree of AT Prevelence in Calgary")
-safe_plot(pmodel_pee, model_pee, "Regression Tree of AT Prevelence in Peel Region")
-safe_plot(pmodel_tor, model_tor, "Regression Tree of AT Prevelence in Toronto", yesno=2)
-safe_plot(pmodel_mon, model_mon, "Regression Tree of AT Prevelence in Montreal", yesno=2)
-safe_plot(pmodel_lav, model_lav, "Regression Tree of AT Prevelence in Laval")
-safe_plot(pmodel_sur, model_sur, "Regression Tree of AT Prevelence in Surrey")
-safe_plot(pmodel_van, model_van, "Regression Tree of AT Prevelence in Vancouver", yesno=2)
+safe_plot(pmodel_cal, model_cal, "Árvore de Regressão — Calgary",
+  subtitle=paste("N treino:", nrow(train_cal), "| cp =", round(mincp_cal, 5)))
+safe_plot(pmodel_pee, model_pee, "Árvore de Regressão — Peel Region",
+  subtitle=paste("N treino:", nrow(train_pee), "| cp =", round(mincp_pee, 5)))
+safe_plot(pmodel_tor, model_tor, "Árvore de Regressão — Toronto", yesno=2,
+  subtitle=paste("N treino:", nrow(train_tor), "| cp =", round(mincp_tor, 5)))
+safe_plot(pmodel_mon, model_mon, "Árvore de Regressão — Montreal", yesno=2,
+  subtitle=paste("N treino:", nrow(train_mon), "| cp =", round(mincp_mon, 5)))
+safe_plot(pmodel_lav, model_lav, "Árvore de Regressão — Laval",
+  subtitle=paste("N treino:", nrow(train_lav), "| cp =", round(mincp_lav, 5)))
+safe_plot(pmodel_sur, model_sur, "Árvore de Regressão — Surrey",
+  subtitle=paste("N treino:", nrow(train_sur), "| cp =", round(mincp_sur, 5)))
+safe_plot(pmodel_van, model_van, "Árvore de Regressão — Vancouver", yesno=2,
+  subtitle=paste("N treino:", nrow(train_van), "| cp =", round(mincp_van, 5)))
 ```
 
 ```{r}
@@ -783,19 +803,19 @@ Measure the importance of each pruned variable
 ```{r eval = T, include = T}
 set.seed(seed)
 # Fallback: se o modelo podado ficou com nó raiz único, usa o modelo completo
-safe_vip <- function(pm, fm, title = "") {
+safe_vip <- function(pm, fm, title = "", subtitle = "") {
   m <- if (!is.null(pm$variable.importance) && nrow(pm$frame) > 1) pm else fm
-  p <- vip::vip(m)
-  if (nchar(title) > 0) p <- p + ggplot2::ggtitle(title)
+  p <- vip::vip(m) + ggplot2::labs(x = "Score de Importância (redução de RSS)", y = "Preditor")
+  if (nchar(title) > 0) p <- p + ggplot2::labs(title = title, subtitle = subtitle)
   p
 }
-var_importance_pcal = safe_vip(pmodel_cal, model_cal, "Calgary (pruned)")
-var_importance_ppee = safe_vip(pmodel_pee, model_pee, "Peel Region (pruned)")
-var_importance_ptor = safe_vip(pmodel_tor, model_tor, "Toronto (pruned)")
-var_importance_pmon = safe_vip(pmodel_mon, model_mon, "Montreal (pruned)")
-var_importance_plav = safe_vip(pmodel_lav, model_lav, "Laval (pruned)")
-var_importance_psur = safe_vip(pmodel_sur, model_sur, "Surrey (pruned)")
-var_importance_pvan = safe_vip(pmodel_van, model_van, "Vancouver (pruned)")
+var_importance_pcal = safe_vip(pmodel_cal, model_cal, "Importância — Calgary (podada)", paste("N treino:", nrow(train_cal), "| cp =", round(mincp_cal, 5)))
+var_importance_ppee = safe_vip(pmodel_pee, model_pee, "Importância — Peel Region (podada)", paste("N treino:", nrow(train_pee), "| cp =", round(mincp_pee, 5)))
+var_importance_ptor = safe_vip(pmodel_tor, model_tor, "Importância — Toronto (podada)", paste("N treino:", nrow(train_tor), "| cp =", round(mincp_tor, 5)))
+var_importance_pmon = safe_vip(pmodel_mon, model_mon, "Importância — Montreal (podada)", paste("N treino:", nrow(train_mon), "| cp =", round(mincp_mon, 5)))
+var_importance_plav = safe_vip(pmodel_lav, model_lav, "Importância — Laval (podada)", paste("N treino:", nrow(train_lav), "| cp =", round(mincp_lav, 5)))
+var_importance_psur = safe_vip(pmodel_sur, model_sur, "Importância — Surrey (podada)", paste("N treino:", nrow(train_sur), "| cp =", round(mincp_sur, 5)))
+var_importance_pvan = safe_vip(pmodel_van, model_van, "Importância — Vancouver (podada)", paste("N treino:", nrow(train_van), "| cp =", round(mincp_van, 5)))
 print(var_importance_pcal)
 print(var_importance_ppee)
 print(var_importance_ptor)
@@ -911,6 +931,70 @@ compare_table$cells$setCell(10, 5, cellType="cell", rawValue=test_van_prmse)
 compare_table$renderTable()
 ```
 
+## Modificação: Random Forest (comparação com árvore única)
+
+Random Forest reduz a variância via bagging (500 bootstraps) + amostragem de m = p/3 variáveis por split, sem aumentar o viés. Aqui comparamos seu desempenho com a árvore podada nacional.
+
+```{r include = T}
+set.seed(seed)
+# Imputar NAs com mediana por coluna (randomForest não aceita NAs)
+train_rf <- train
+test_rf  <- test
+for (col in names(train_rf)) {
+  if (is.numeric(train_rf[[col]]) && any(is.na(train_rf[[col]]))) {
+    med <- median(train_rf[[col]], na.rm = TRUE)
+    train_rf[[col]][is.na(train_rf[[col]])] <- med
+    test_rf[[col]][is.na(test_rf[[col]])]   <- med
+  }
+}
+
+rf_model <- randomForest(active_t_prop ~ .,
+                         data      = train_rf,
+                         ntree     = 500,
+                         mtry      = floor(ncol(train_rf) / 3),
+                         importance = TRUE)
+
+rf_train_rmse <- RMSE(predict(rf_model, train_rf), train_rf$active_t_prop)
+rf_test_rmse  <- RMSE(predict(rf_model, test_rf),  test_rf$active_t_prop)
+rf_oob_rmse   <- sqrt(mean(rf_model$mse))
+
+rf_compare = BasicTable$new()
+rf_compare$cells$setCell(1, 1, cellType="root",         rawValue="Modelo")
+rf_compare$cells$setCell(1, 2, cellType="columnHeader", rawValue="RMSE Treino")
+rf_compare$cells$setCell(1, 3, cellType="columnHeader", rawValue="RMSE Teste")
+rf_compare$cells$setCell(1, 4, cellType="columnHeader", rawValue="RMSE OOB")
+
+rf_compare$cells$setCell(2, 1, cellType="cell", rawValue="Árvore única — podada")
+rf_compare$cells$setCell(2, 2, cellType="cell", rawValue=train_prmse)
+rf_compare$cells$setCell(2, 3, cellType="cell", rawValue=test_prmse)
+rf_compare$cells$setCell(2, 4, cellType="cell", rawValue="—")
+
+rf_compare$cells$setCell(3, 1, cellType="cell", rawValue="Random Forest (500 árvores)")
+rf_compare$cells$setCell(3, 2, cellType="cell", rawValue=rf_train_rmse)
+rf_compare$cells$setCell(3, 3, cellType="cell", rawValue=rf_test_rmse)
+rf_compare$cells$setCell(3, 4, cellType="cell", rawValue=rf_oob_rmse)
+
+rf_compare$renderTable()
+```
+
+```{r include = T}
+imp_rf <- as.data.frame(importance(rf_model, type = 1))
+imp_rf$Variable <- rownames(imp_rf)
+imp_rf <- imp_rf[order(-imp_rf[,1]), ][1:15, ]
+names(imp_rf)[1] <- "PctIncMSE"
+
+rf_imp_plot <- ggplot(imp_rf, aes(x = PctIncMSE, y = reorder(Variable, PctIncMSE))) +
+  geom_col(fill = "steelblue") +
+  labs(title   = "Top 15 Variáveis Mais Importantes — Random Forest (500 árvores)",
+       subtitle = "Métrica: %IncMSE — aumento médio do MSE ao permutar aleatoriamente a variável",
+       x = "%IncMSE (quanto piora o erro sem esta variável)",
+       y = "Preditor",
+       caption = "Dados: CHASE 2018 — 552 escolas | mtry = p/3 | ntree = 500") +
+  theme_bw()
+ggsave(rf_imp_plot, filename = "output/RF_Variable_Importance.png", width = 8, height = 6)
+rf_imp_plot
+```
+
 ```{r}
 vip::vi(pmodel)
 vip::vi(pmodel_nocity)
@@ -938,8 +1022,17 @@ rownames(df_pimportanceplot) = (df_pimportanceplot[,1])
 df_pimportanceplot = df_pimportanceplot[,-1]
 df_pimportanceplot$Predictor = row.names(df_pimportanceplot)
 dat.m = melt(df_pimportanceplot)
-impplot = ggplot(dat.m, aes(value, y=reorder(Predictor,value,na.rm=TRUE))) + labs(y="Predictors", x="Importance Score", color = "Model") + geom_point(aes(colour = variable))
-ggsave(impplot, filename = "output/AT_Importance_Score_Dot_Plot.png")
+impplot = ggplot(dat.m, aes(value, y=reorder(Predictor,value,na.rm=TRUE))) +
+  labs(title   = "Comparação de Importância de Variáveis entre Todos os Modelos",
+       subtitle = "Cada ponto = score de importância de um preditor num modelo específico\nCidades com poda = nó raiz exibem o modelo completo. Scores: redução acumulada de RSS.",
+       y       = "Preditor",
+       x       = "Score de Importância (redução acumulada de RSS)",
+       color   = "Modelo",
+       caption = "Dados: CHASE 2018 — 552 escolas, 7 cidades canadenses | Técnica: rpart ANOVA") +
+  geom_point(aes(colour = variable)) +
+  theme_bw() +
+  theme(legend.position = "right")
+ggsave(impplot, filename = "output/AT_Importance_Score_Dot_Plot.png", width = 10, height = 8)
 impplot
 ```
 
@@ -984,6 +1077,28 @@ prevalence_merge_df = rbind(combined_testdf, combined_traindf)
 prevalence_final_df = cbind(prevalence_merge_df, prevelence_dta[,c("myid","active_t")])
 
 write.csv(prevalence_final_df, "output/Predicted_Prevalence.csv")
+```
+
+```{r include = T}
+scatter_df <- data.frame(
+  observado = c(test$active_t_prop, train$active_t_prop),
+  previsto  = c(predict_ptest, predict_ptrain),
+  conjunto  = c(rep("Teste (20%)", length(test$active_t_prop)),
+                rep("Treino (80%)", length(train$active_t_prop)))
+)
+scatter_plot <- ggplot(scatter_df, aes(x = observado, y = previsto, color = conjunto)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
+  labs(title   = "Previsto vs. Observado — Árvore Nacional Podada",
+       subtitle = "Linha diagonal = previsão perfeita | Pontos acima = superestimação | Pontos abaixo = subestimação",
+       x       = "Proporção de TA observada",
+       y       = "Proporção de TA prevista",
+       color   = "Conjunto",
+       caption = "RMSE Teste = 0,1621 | RMSE Treino = 0,1438 | N = 552 escolas") +
+  scale_color_manual(values = c("Teste (20%)" = "tomato", "Treino (80%)" = "steelblue")) +
+  theme_bw()
+ggsave(scatter_plot, filename = "output/Predicted_vs_Observed.png", width = 7, height = 5)
+scatter_plot
 ```
 
 
